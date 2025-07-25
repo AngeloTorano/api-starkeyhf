@@ -1,10 +1,10 @@
-<?php
+<?php 
 header('Content-Type: application/json');
 
 // Include DB connection
 include '../connection.php';
 
-// Check if $connectNow is defined and connected
+// Check DB connection
 if (!isset($connectNow) || !$connectNow) {
   echo json_encode([
     'success' => false,
@@ -13,7 +13,7 @@ if (!isset($connectNow) || !$connectNow) {
   exit;
 }
 
-// SQL query to fetch SMS logs joined with patients only
+// SQL: Join sms_logs -> patients -> cities
 $sql = "
   SELECT 
     s.SMSLogID,
@@ -22,9 +22,11 @@ $sql = "
     s.RecipientNumber,
     s.Message,
     s.Status,
-    s.SentAt
+    s.SentAt,
+    COALESCE(c.CityName, 'Unknown') AS City
   FROM sms_logs s
   LEFT JOIN patients p ON s.PatientID = p.id
+  LEFT JOIN cities c ON p.city_id = c.CityID
   ORDER BY s.SentAt DESC
 ";
 
@@ -32,9 +34,11 @@ $result = mysqli_query($connectNow, $sql);
 
 if ($result) {
   $logs = [];
+  $counter = 1; // Start from 1
 
   while ($row = mysqli_fetch_assoc($result)) {
     $logs[] = [
+      'row_number' => $counter++,
       'sms_log_id' => $row['SMSLogID'],
       'patient_id' => $row['PatientID'],
       'patient_name' => trim($row['patient_name']) !== '' ? trim($row['patient_name']) : 'Unknown',
@@ -42,6 +46,7 @@ if ($result) {
       'message' => $row['Message'],
       'status' => $row['Status'],
       'sent_at' => $row['SentAt'],
+      'city' => $row['City'],
     ];
   }
 

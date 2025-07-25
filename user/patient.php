@@ -1,71 +1,96 @@
 <?php
-// filepath: c:\xampp\htdocs\api_starkey\user\patient.php
 include '../connection.php';
 header('Content-Type: application/json');
 
-// Get search parameters from POST (or GET for flexibility)
 $patientID = $_POST['PatientID'] ?? null;
 $surname = $_POST['Surname'] ?? null;
 $firstName = $_POST['FirstName'] ?? null;
 $school = $_POST['School'] ?? null;
 $city = $_POST['City'] ?? null;
 
-// Build dynamic WHERE clause
+$userId = $_POST['UserID'] ?? null;
+$role = $_POST['Role'] ?? null;
+
 $where = [];
 $params = [];
 $types = '';
 
+// Filter conditions
 if ($patientID) {
-    $where[] = 'id = ?';
+    $where[] = 'p.id = ?';
     $params[] = $patientID;
     $types .= 'i';
 }
 if ($surname) {
-    $where[] = 'surname LIKE ?';
+    $where[] = 'p.surname LIKE ?';
     $params[] = "%$surname%";
     $types .= 's';
 }
 if ($firstName) {
-    $where[] = 'first_name LIKE ?';
+    $where[] = 'p.first_name LIKE ?';
     $params[] = "%$firstName%";
     $types .= 's';
 }
 if ($school) {
-    $where[] = 'school_name LIKE ?';
+    $where[] = 'p.school_name LIKE ?';
     $params[] = "%$school%";
     $types .= 's';
 }
 if ($city) {
-    $where[] = 'city_or_village LIKE ?';
+    $where[] = 'c.CityName LIKE ?';
     $params[] = "%$city%";
     $types .= 's';
 }
 
-// Build SQL
-$sql = "SELECT 
-    id AS `SHF Patient ID`,
-    shf_id,
-    CONCAT(first_name, ' ', surname) AS `Name`,
-    TIMESTAMPDIFF(YEAR, birthdate, CURDATE()) AS `Age`,
-    birthdate AS `Birthdate`,
-    gender AS `Gender`,
-    mobile_number AS `Mobile`,
-    school_name AS `School`,
-    education_level AS `Education`,
-    employment_status AS `Employment`
-    FROM patients";
+// 🔒 Get CoordinatorID from users table first (based on logged in user ID)
+$coordinatorId = null;
+if ($role === 'City Coordinator' && $userId) {
+    $userStmt = $connectNow->prepare("SELECT CoordinatorID FROM users WHERE UserID = ?");
+    $userStmt->bind_param("i", $userId);
+    $userStmt->execute();
+    $userResult = $userStmt->get_result();
+    if ($userRow = $userResult->fetch_assoc()) {
+        $coordinatorId = $userRow['CoordinatorID'];
+    }
+    $userStmt->close();
 
-// If there are conditions, add WHERE clause
+    if ($coordinatorId) {
+        $where[] = 'c.CoordinatorID = ?';
+        $params[] = $coordinatorId;
+        $types .= 'i';
+    } else {
+        echo json_encode([
+            "success" => false,
+            "message" => "CoordinatorID not found for user"
+        ]);
+        exit;
+    }
+}
+
+// Main query
+$sql = "SELECT 
+    p.id AS `SHF Patient ID`,
+    p.shf_id,
+    CONCAT(p.first_name, ' ', p.surname) AS `Name`,
+    TIMESTAMPDIFF(YEAR, p.birthdate, CURDATE()) AS `Age`,
+    p.birthdate AS `Birthdate`,
+    p.gender AS `Gender`,
+    p.mobile_number AS `Mobile`,
+    c.CityName AS `City`,
+    p.school_name AS `School`,
+    p.education_level AS `Education`,
+    p.employment_status AS `Employment`
+FROM patients p
+LEFT JOIN cities c ON p.city_id = c.CityID";
+
 if (!empty($where)) {
-    $sql .= " WHERE " . implode(' AND ', $where);
+    $sql .= " WHERE " . implode(" AND ", $where);
 }
 
 $stmt = $connectNow->prepare($sql);
-
 if (!empty($params)) {
     $stmt->bind_param($types, ...$params);
 }
-
 $stmt->execute();
 $result = $stmt->get_result();
 
@@ -87,3 +112,4 @@ if ($result && $result->num_rows > 0) {
 
 $stmt->close();
 $connectNow->close();
+?>
